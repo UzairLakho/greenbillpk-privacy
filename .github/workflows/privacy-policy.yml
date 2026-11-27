@@ -1,0 +1,56 @@
+name: Publish app privacy policy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: privacy-policy-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Stage only the privacy policy
+        env:
+          SUPPORT_EMAIL: ${{ vars.PUBLIC_SUPPORT_EMAIL }}
+          POLICY_DATE: ${{ vars.PRIVACY_POLICY_DATE }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import html
+          import os
+          import re
+          from pathlib import Path
+
+          email = os.environ["SUPPORT_EMAIL"].strip()
+          if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", email):
+              raise SystemExit("Set PUBLIC_SUPPORT_EMAIL to your public support address.")
+          try:
+              date = datetime.date.fromisoformat(os.environ["POLICY_DATE"].strip())
+          except ValueError:
+              raise SystemExit("Set PRIVACY_POLICY_DATE to the reviewed policy date in YYYY-MM-DD format.")
+
+          policy = Path("store/PRIVACY_POLICY.html").read_text(encoding="utf-8-sig")
+          policy = policy.replace(" — Privacy Policy Draft", " — Privacy Policy")
+          policy = policy.replace("<p><strong>Draft: replace the date and contact details and review before publishing.</strong></p>", "")
+          policy = policy.replace("[DATE]", date.isoformat()).replace("[YOUR_EMAIL]", html.escape(email))
+          output = Path("_policy-site")
+          output.mkdir()
+          (output / "index.html").write_text(policy, encoding="utf-8")
+          PY
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _policy-site
+      - id: deploy
+        uses: actions/deploy-pages@v4
